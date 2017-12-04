@@ -385,7 +385,9 @@ class Network(nn.Module):
 
   def _add_losses_fpn(self, sigma_rpn=3.0):
     rpn_cross_entropy = 0
+    rpn_cross_entropy_num = 0
     rpn_loss_box = 0
+    rpn_loss_box_num = 0
     for idx in range(5):
       # RPN, class loss
       rpn_cls_score = self._predictions['rpn_cls_score_reshape'][idx].view(-1, 2)
@@ -393,7 +395,8 @@ class Network(nn.Module):
       rpn_select = Variable((rpn_label.data != -1).nonzero().view(-1))
       rpn_cls_score = rpn_cls_score.index_select(0, rpn_select).contiguous().view(-1, 2)
       rpn_label = rpn_label.index_select(0, rpn_select).contiguous().view(-1)
-      rpn_cross_entropy += F.cross_entropy(rpn_cls_score, rpn_label)
+      rpn_cross_entropy += F.cross_entropy(rpn_cls_score, rpn_label) * rpn_label.size(0)
+      rpn_cross_entropy_num += rpn_label.size(0)
 
       # RPN, bbox loss
       rpn_bbox_pred = self._predictions['rpn_bbox_pred'][idx]
@@ -401,10 +404,12 @@ class Network(nn.Module):
       rpn_bbox_inside_weights = self._anchor_targets['rpn_bbox_inside_weights'][idx]
       rpn_bbox_outside_weights = self._anchor_targets['rpn_bbox_outside_weights'][idx]
       rpn_loss_box += self._smooth_l1_loss(rpn_bbox_pred, rpn_bbox_targets, rpn_bbox_inside_weights,
-                                            rpn_bbox_outside_weights, sigma=sigma_rpn, dim=[1, 2, 3])
+                                            rpn_bbox_outside_weights, sigma=sigma_rpn, dim=[1, 2, 3]) * rpn_bbox_inside_weights.sum()
+      rpn_loss_box_num += rpn_bbox_inside_weights.sum()
 
-    rpn_cross_entropy /= 5
-    rpn_loss_box /= 5
+    # TODO NORMALIZE FOR LOSS
+    rpn_cross_entropy /= rpn_cross_entropy_num
+    rpn_loss_box /= rpn_loss_box_num
 
     # RCNN, class loss
     cls_score = self._predictions["cls_score"]
