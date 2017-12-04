@@ -109,6 +109,51 @@ class Bottleneck(nn.Module):
 
     return out
 
+class BuildBlock(nn.Module):
+  def __init__(self, planes=256):
+    super(BuildBlock, self).__init__()
+    # Top-down layers, use nn.ConvTranspose2d to replace nn.Conv2d+F.upsample?
+    self.toplayer1 = nn.Conv2d(2048, planes, kernel_size=1, stride=1, padding=0)  # Reduce channels
+    self.toplayer2 = nn.Conv2d( 256, planes, kernel_size=3, stride=1, padding=1)
+    self.toplayer3 = nn.Conv2d( 256, planes, kernel_size=3, stride=1, padding=1)
+    self.toplayer4 = nn.Conv2d( 256, planes, kernel_size=3, stride=1, padding=1)
+
+    # Lateral layers
+    self.latlayer1 = nn.Conv2d(1024, planes, kernel_size=1, stride=1, padding=0)
+    self.latlayer2 = nn.Conv2d( 512, planes, kernel_size=1, stride=1, padding=0)
+    self.latlayer3 = nn.Conv2d( 256, planes, kernel_size=1, stride=1, padding=0)
+
+    self.subsample = nn.AvgPool2d(2, stride=2)
+
+  def _upsample_add(self, x, y):
+    _,_,H,W = y.size()
+    return F.upsample(x, size=(H,W), mode='bilinear') + y
+
+  def forward(self, c2, c3, c4, c5):
+    # Top-down
+    p5 = self.toplayer1(c5)
+    p6 = self.subsample(p5)
+    p4 = self._upsample_add(p5, self.latlayer1(c4))
+    p4 = self.toplayer2(p4)
+    p3 = self._upsample_add(p4, self.latlayer2(c3))
+    p3 = self.toplayer3(p3)
+    p2 = self._upsample_add(p3, self.latlayer3(c2))
+    p2 = self.toplayer4(p2)
+
+    return p2, p3, p4, p5, p6
+
+class HiddenBlock(nn.Module):
+  def __init__(self, channels, planes):
+    super(HiddenBlock, self).__init__()
+    self.fc1 = nn.Linear(channels * 7 * 7,planes)
+    self.fc2 = nn.Linear(planes,planes)
+
+  def forward(self, x):
+    x = self.fc1(x)
+    x = F.relu(x)
+    x = self.fc2(x)
+    x = F.relu(x)
+    return x
 
 class ResNet(nn.Module):
   def __init__(self, block, layers, num_classes=1000):
@@ -124,7 +169,10 @@ class ResNet(nn.Module):
     self.layer2 = self._make_layer(block, 128, layers[1], stride=2)
     self.layer3 = self._make_layer(block, 256, layers[2], stride=2)
     # use stride 1 for the last conv4 layer (same as tf-faster-rcnn)
-    self.layer4 = self._make_layer(block, 512, layers[3], stride=1)
+    if cfg.FPN:
+      self.layer4 = self._make_layer(block, 512, layers[3], stride=2)
+    else:
+      self.layer4 = self._make_layer(block, 512, layers[3], stride=1)
 
     for m in self.modules():
       if isinstance(m, nn.Conv2d):
@@ -208,23 +256,39 @@ def resnet152(pretrained=False):
 class resnetv1(Network):
   def __init__(self, num_layers=50):
     Network.__init__(self)
-    self._feat_stride = [16, ]
+    if cfg.FPN:
+      self._feat_stride = [4, 8, 16, 32, 64]
+      self._net_conv_channels = 256
+      self._fc7_channels = 1024
+    else:
+      self._feat_stride = [16, ]
+      self._net_conv_channels = 1024
+      self._fc7_channels = 2048
     self._feat_compress = [1. / float(self._feat_stride[0]), ]
     self._num_layers = num_layers
-    self._net_conv_channels = 1024
-    self._fc7_channels = 2048
 
   def _crop_pool_layer(self, bottom, rois):
     return Network._crop_pool_layer(self, bottom, rois, cfg.RESNET.MAX_POOL)
 
   def _image_to_head(self):
-    net_conv = self._layers['head'](self._image)
-    self._act_summaries['conv'] = net_conv
+    if cfg.FPN:
+      c2 = self._layers['head'][0](self._image)
+      c3 = self._layers['head'][1](c2)
+      c4 = self._layers['head'][2](c3)
+      c5 = self._layers['head'][3](c4)
+      p2, p3, p4, p5, p6 = self._layers['fpn'](c2, c3, c4, c5)
+      net_conv = [p2, p3, p4, p5, p6]
+    else:
+      net_conv = self._layers['head'](self._image)
 
+    self._act_summaries['conv'] = net_conv
     return net_conv
 
   def _head_to_tail(self, pool5):
-    fc7 = self.resnet.layer4(pool5).mean(3).mean(2) # average pooling after layer4
+    if cfg.FPN:
+      fc7 = self.head(pool5)
+    else:
+      fc7 = self.resnet.layer4(pool5).mean(3).mean(2) # average pooling after layer4
     return fc7
 
   def _init_head_tail(self):
@@ -261,8 +325,20 @@ class resnetv1(Network):
     self.resnet.apply(set_bn_fix)
 
     # Build resnet.
-    self._layers['head'] = nn.Sequential(self.resnet.conv1, self.resnet.bn1,self.resnet.relu, 
-      self.resnet.maxpool,self.resnet.layer1,self.resnet.layer2,self.resnet.layer3)
+    if cfg.FPN:
+    # Build Building Block for FPN
+      self.head = HiddenBlock(self._net_conv_channels,self._fc7_channels)
+      self.fpn_block = BuildBlock()
+      self._layers['fpn'] = self.fpn_block
+      self._layers['head'] = []
+      self._layers['head'].append(nn.Sequential(self.resnet.conv1, self.resnet.bn1,self.resnet.relu, 
+        self.resnet.maxpool,self.resnet.layer1))
+      self._layers['head'].append(nn.Sequential(self.resnet.layer2))
+      self._layers['head'].append(nn.Sequential(self.resnet.layer3))
+      self._layers['head'].append(nn.Sequential(self.resnet.layer4))
+    else:
+      self._layers['head'] = nn.Sequential(self.resnet.conv1, self.resnet.bn1,self.resnet.relu, 
+        self.resnet.maxpool,self.resnet.layer1,self.resnet.layer2,self.resnet.layer3)
 
   def train(self, mode=True):
     # Override train so that the training mode is set as we want
