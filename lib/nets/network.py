@@ -1,7 +1,7 @@
 # --------------------------------------------------------
-# Tensorflow Faster R-CNN
+# Pytorch Faster R-CNN and FPN
 # Licensed under The MIT License [see LICENSE for details]
-# Written by Xinlei Chen
+# Written by Xinlei Chen, Yixiao Ge
 # --------------------------------------------------------
 from __future__ import absolute_import
 from __future__ import division
@@ -18,7 +18,7 @@ from torch.autograd import Variable
 import utils.timer
 
 from layer_utils.snippets import generate_anchors_pre
-from layer_utils.proposal_layer import proposal_layer
+from layer_utils.proposal_layer import proposal_layer, proposal_layer_fpn
 from layer_utils.proposal_top_layer import proposal_top_layer
 from layer_utils.anchor_target_layer import anchor_target_layer
 from layer_utils.proposal_target_layer import proposal_target_layer
@@ -92,10 +92,10 @@ class Network(nn.Module):
 
     return rois, rpn_scores
 
-  def _proposal_layer_fpn(self, rpn_cls_prob, rpn_bbox_pred, idx):
-    rois, rpn_scores = proposal_layer(\
+  def _proposal_layer_fpn(self, rpn_cls_prob, rpn_bbox_pred):
+    rois, rpn_scores = proposal_layer_fpn(\
                                     rpn_cls_prob, rpn_bbox_pred, self._im_info, self._mode,
-                                     [self._feat_stride[idx]], self._anchors[idx], self._num_anchors)
+                                     self._feat_stride, self._anchors, self._num_anchors)
 
     return rois, rpn_scores
 
@@ -438,8 +438,8 @@ class Network(nn.Module):
 
   def _region_proposal_fpn(self, net_conv):
     self._act_summaries['rpn'] = []
-    rois_total = []
-    rois_scores_total = []
+    rpn_cls_prob_total = []
+    rpn_bbox_pred_total = []
     for idx, p in enumerate(net_conv):
       rpn = F.relu(self.rpn_net(p))
       self._act_summaries['rpn'].append(rpn)
@@ -459,20 +459,11 @@ class Network(nn.Module):
       rpn_bbox_pred = self.rpn_bbox_pred_net(rpn)
       rpn_bbox_pred = rpn_bbox_pred.permute(0, 2, 3, 1).contiguous()  # batch * h * w * (num_anchors*4)
 
+      rpn_cls_prob_total.append(rpn_cls_prob)
+      rpn_bbox_pred_total.append(rpn_bbox_pred)
+
       if self._mode == 'TRAIN':
-        rois, roi_scores = self._proposal_layer_fpn(rpn_cls_prob, rpn_bbox_pred, idx) # rois, roi_scores are varible
         rpn_labels = self._anchor_target_layer_fpn(rpn_cls_score,idx)
-        rois_total.append(rois)
-        rois_scores_total.append(roi_scores)
-        # rois, _ = self._proposal_target_layer_fpn(rois, roi_scores)
-      else:
-        # TODO
-        if cfg.TEST.MODE == 'nms':
-          rois, _ = self._proposal_layer_fpn(rpn_cls_prob, rpn_bbox_pred, idx)
-        elif cfg.TEST.MODE == 'top':
-          rois, _ = self._proposal_top_layer_fpn(rpn_cls_prob, rpn_bbox_pred)
-        else:
-          raise NotImplementedError
 
       if 'rpn_cls_score' not in self._predictions:
         self._predictions['rpn_cls_score'] = []
@@ -490,17 +481,18 @@ class Network(nn.Module):
       self._predictions["rpn_cls_pred"].append(rpn_cls_pred)
       self._predictions["rpn_bbox_pred"].append(rpn_bbox_pred)
 
-    rois = torch.cat(rois_total)
-    rois_scores = torch.cat(rois_scores_total)
+    if self._mode == 'TRAIN':
+      rois, roi_scores = self._proposal_layer_fpn(rpn_cls_prob_total, rpn_bbox_pred_total) # rois, roi_scores are varible
+      rois, _ = self._proposal_target_layer(rois, roi_scores)
+    else:
+      # TODO
+      if cfg.TEST.MODE == 'nms':
+        rois, _ = self._proposal_layer_fpn(rpn_cls_prob_total, rpn_bbox_pred_total)
+      # elif cfg.TEST.MODE == 'top':
+      #   rois, _ = self._proposal_top_layer_fpn(rpn_cls_prob, rpn_bbox_pred)
+      else:
+        raise NotImplementedError
 
-    rois_scores, order = rois_scores.view(-1).sort(descending=True)
-    post_nms_topN = cfg[self._mode].RPN_POST_NMS_TOP_N
-    if post_nms_topN>0:
-      order = order[:post_nms_topN]
-      rois_scores = rois_scores[:post_nms_topN].view(-1, 1)
-      rois = rois[:post_nms_topN]
-
-    rois, _ = self._proposal_target_layer(rois, rois_scores)
     self._predictions["rois"] = rois
     for k in self._anchor_targets.keys():
       self._score_summaries[k] = self._anchor_targets[k]

@@ -1,7 +1,7 @@
 # --------------------------------------------------------
-# Tensorflow Faster R-CNN
+# Pytorch Faster R-CNN and FPN
 # Licensed under The MIT License [see LICENSE for details]
-# Written by Zheqi He and Xinlei Chen
+# Written by Zheqi He and Xinlei Chen, Yixiao Ge
 # --------------------------------------------------------
 from __future__ import absolute_import
 from __future__ import division
