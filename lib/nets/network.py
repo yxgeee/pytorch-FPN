@@ -154,7 +154,7 @@ class Network(nn.Module):
         all_roi.append(_roi_feature)
       crops = torch.cat(all_roi)
       # crops = F.grid_sample(bottom.expand(rois.size(0), bottom.size(1), bottom.size(2), bottom.size(3)), grid)
-    
+
     return crops
 
   def _crop_pool_layer_fpn(self, bottom, rois, max_pool=True):
@@ -186,7 +186,7 @@ class Network(nn.Module):
     ratio = torch.sqrt(w*h) / 224.
     k = k0 + np.log2(ratio.cpu().data.numpy())
     k[k<2]=2
-    k[k>6]=6
+    k[k>5]=5
     k = Variable(torch.round(torch.from_numpy(k)).cuda())
     x1 = x1 / (2 ** k)
     y1 = y1 / (2 ** k)
@@ -232,7 +232,7 @@ class Network(nn.Module):
         all_roi.append(_roi_feature)
       crops = torch.cat(all_roi)
       # crops = F.grid_sample(bottom.expand(rois.size(0), bottom.size(1), bottom.size(2), bottom.size(3)), grid)
-    
+
     return crops
 
   def _anchor_target_layer(self, rpn_cls_score):
@@ -449,7 +449,7 @@ class Network(nn.Module):
       # change it so that the score has 2 as its channel size
       rpn_cls_score_reshape = rpn_cls_score.view(1, 2, -1, rpn_cls_score.size()[-1]) # batch * 2 * (num_anchors*h) * w
       rpn_cls_prob_reshape = F.softmax(rpn_cls_score_reshape)
-      
+
       # Move channel to the last dimenstion, to fit the input of python functions
       rpn_cls_prob = rpn_cls_prob_reshape.view_as(rpn_cls_score).permute(0, 2, 3, 1) # batch * h * w * (num_anchors * 2)
       rpn_cls_score = rpn_cls_score.permute(0, 2, 3, 1) # batch * h * w * (num_anchors * 2)
@@ -492,6 +492,14 @@ class Network(nn.Module):
 
     rois = torch.cat(rois_total)
     rois_scores = torch.cat(rois_scores_total)
+
+    rois_scores, order = rois_scores.view(-1).sort(descending=True)
+    post_nms_topN = cfg[self._mode].RPN_POST_NMS_TOP_N
+    if post_nms_topN>0:
+      order = order[:post_nms_topN]
+      rois_scores = rois_scores[:post_nms_topN].view(-1, 1)
+      rois = rois[:post_nms_topN]
+
     rois, _ = self._proposal_target_layer(rois, rois_scores)
     self._predictions["rois"] = rois
     for k in self._anchor_targets.keys():
@@ -508,7 +516,7 @@ class Network(nn.Module):
     # change it so that the score has 2 as its channel size
     rpn_cls_score_reshape = rpn_cls_score.view(1, 2, -1, rpn_cls_score.size()[-1]) # batch * 2 * (num_anchors*h) * w
     rpn_cls_prob_reshape = F.softmax(rpn_cls_score_reshape)
-    
+
     # Move channel to the last dimenstion, to fit the input of python functions
     rpn_cls_prob = rpn_cls_prob_reshape.view_as(rpn_cls_score).permute(0, 2, 3, 1) # batch * h * w * (num_anchors * 2)
     rpn_cls_score = rpn_cls_score.permute(0, 2, 3, 1) # batch * h * w * (num_anchors * 2)
@@ -586,7 +594,7 @@ class Network(nn.Module):
     self.rpn_net = nn.Conv2d(self._net_conv_channels, cfg.RPN_CHANNELS, [3, 3], padding=1)
 
     self.rpn_cls_score_net = nn.Conv2d(cfg.RPN_CHANNELS, self._num_anchors * 2, [1, 1])
-    
+
     self.rpn_bbox_pred_net = nn.Conv2d(cfg.RPN_CHANNELS, self._num_anchors * 4, [1, 1])
 
     self.cls_score_net = nn.Linear(self._fc7_channels, self._num_classes)
@@ -620,7 +628,7 @@ class Network(nn.Module):
           summaries.append(self._add_train_summary(k, var))
 
       self._image_gt_summaries = {}
-    
+
     return summaries
 
   def _run_summary_op_fpn(self, val=False):
@@ -651,7 +659,7 @@ class Network(nn.Module):
           summaries.append(self._add_train_summary(k, var))
 
       self._image_gt_summaries = {}
-    
+
     return summaries
 
   def _predict(self):
@@ -679,7 +687,7 @@ class Network(nn.Module):
     fc7 = self._head_to_tail(pool5)
 
     cls_prob, bbox_pred = self._region_classification(fc7)
-    
+
     for k in self._predictions.keys():
       self._score_summaries[k] = self._predictions[k]
 
@@ -720,7 +728,7 @@ class Network(nn.Module):
       else:
         m.weight.data.normal_(mean, stddev)
       m.bias.data.zero_()
-      
+
     normal_init(self.rpn_net, 0, 0.01, cfg.TRAIN.TRUNCATED)
     normal_init(self.rpn_cls_score_net, 0, 0.01, cfg.TRAIN.TRUNCATED)
     normal_init(self.rpn_bbox_pred_net, 0, 0.01, cfg.TRAIN.TRUNCATED)
@@ -802,7 +810,7 @@ class Network(nn.Module):
 
   def load_state_dict(self, state_dict):
     """
-    Because we remove the definition of fc layer in resnet now, it will fail when loading 
+    Because we remove the definition of fc layer in resnet now, it will fail when loading
     the model trained before.
     To provide back compatibility, we overwrite the load_state_dict
     """
