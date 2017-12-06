@@ -268,7 +268,10 @@ class resnetv1(Network):
     self._num_layers = num_layers
 
   def _crop_pool_layer(self, bottom, rois):
-    return Network._crop_pool_layer(self, bottom, rois, cfg.RESNET.MAX_POOL)
+    if cfg.FPN:
+      return Network._crop_pool_layer_fpn(self, bottom, rois, cfg.RESNET.MAX_POOL)
+    else:
+      return Network._crop_pool_layer(self, bottom, rois, cfg.RESNET.MAX_POOL)
 
   def _image_to_head(self):
     if cfg.FPN:
@@ -327,7 +330,6 @@ class resnetv1(Network):
     # Build resnet.
     if cfg.FPN:
     # Build Building Block for FPN
-      self.head = HiddenBlock(self._net_conv_channels,self._fc7_channels)
       self.fpn_block = BuildBlock()
       self._layers['fpn'] = self.fpn_block
       self._layers['head'] = []
@@ -336,6 +338,7 @@ class resnetv1(Network):
       self._layers['head'].append(nn.Sequential(self.resnet.layer2))
       self._layers['head'].append(nn.Sequential(self.resnet.layer3))
       self._layers['head'].append(nn.Sequential(self.resnet.layer4))
+      self.head = HiddenBlock(self._net_conv_channels,self._fc7_channels)
     else:
       self._layers['head'] = nn.Sequential(self.resnet.conv1, self.resnet.bn1,self.resnet.relu, 
         self.resnet.maxpool,self.resnet.layer1,self.resnet.layer2,self.resnet.layer3)

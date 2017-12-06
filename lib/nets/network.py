@@ -126,7 +126,7 @@ class Network(nn.Module):
     width = bottom.size(3)
 
     # affine theta
-    theta = Variable(rois.data.new(rois.size(0), 2, 3).zero_())
+    theta = Variable(rois.data.new(rois.size(0), 2, 3).zero_(), volatile=self._mode == 'TEST')
     theta[:, 0, 0] = (x2 - x1) / (width - 1)
     theta[:, 0 ,2] = (x1 + x2 - width + 1) / (width - 1)
     theta[:, 1, 1] = (y2 - y1) / (height - 1)
@@ -187,7 +187,7 @@ class Network(nn.Module):
     k = k0 + np.log2(ratio.cpu().data.numpy())
     k[k<2]=2
     k[k>5]=5
-    k = Variable(torch.round(torch.from_numpy(k)).cuda())
+    k = Variable(torch.round(torch.from_numpy(k)).cuda(), volatile=self._mode == 'TEST')
     x1 = x1 / (2 ** k)
     y1 = y1 / (2 ** k)
     x2 = x2 / (2 ** k)
@@ -201,10 +201,10 @@ class Network(nn.Module):
       height.append(bottom[k[idx].data[0]-2].size(2))
       width.append(bottom[k[idx].data[0]-2].size(3))
 
-    height = Variable(torch.Tensor(height).cuda()).view(roi_num,1)
-    width = Variable(torch.Tensor(width).cuda()).view(roi_num,1)
+    height = Variable(torch.Tensor(height).cuda(), volatile=self._mode == 'TEST').view(roi_num,1)
+    width = Variable(torch.Tensor(width).cuda(), volatile=self._mode == 'TEST').view(roi_num,1)
     # affine theta
-    theta = Variable(rois.data.new(rois.size(0), 2, 3).zero_())
+    theta = Variable(rois.data.new(rois.size(0), 2, 3).zero_(), volatile=self._mode == 'TEST')
     theta[:, 0, 0] = (x2 - x1) / (width - 1)
     theta[:, 0 ,2] = (x1 + x2 - width + 1) / (width - 1)
     theta[:, 1, 1] = (y2 - y1) / (height - 1)
@@ -216,10 +216,10 @@ class Network(nn.Module):
 
       all_roi = []
       for j in range(rois.size(0)):
-        _grid = grid.narrow(0, j, 1)
-        _roi_feature = F.grid_sample(bottom[k[j].data[0]-2].view(1,bottom[k[j].data[0]-2].size(1), bottom[k[j].data[0]-2].size(2), bottom[k[j].data[0]-2].size(3)), _grid)
-        all_roi.append(_roi_feature)
-      crops = torch.cat(all_roi)
+        _grid = grid.narrow(0, j, 1).data
+        _roi_feature = F.grid_sample(bottom[k[j].data[0]-2].view(1,bottom[k[j].data[0]-2].size(1), bottom[k[j].data[0]-2].size(2), bottom[k[j].data[0]-2].size(3)).data, _grid)
+        all_roi.append(_roi_feature.data)
+      crops = Variable(torch.cat(all_roi), volatile=self._mode == 'TEST')
       # crops = F.grid_sample(bottom.expand(rois.size(0), bottom.size(1), bottom.size(2), bottom.size(3)), grid)
       crops = F.max_pool2d(crops, 2, 2)
     else:
@@ -227,10 +227,10 @@ class Network(nn.Module):
 
       all_roi = []
       for j in range(rois.size(0)):
-        _grid = grid.narrow(0, j, 1)
-        _roi_feature = F.grid_sample(bottom[k[j].data[0]-2].view(1,bottom[k[j].data[0]-2].size(1), bottom[k[j].data[0]-2].size(2), bottom[k[j].data[0]-2].size(3)), _grid)
-        all_roi.append(_roi_feature)
-      crops = torch.cat(all_roi)
+        _grid = grid.narrow(0, j, 1).data
+        _roi_feature = F.grid_sample(bottom[k[j].data[0]-2].view(1,bottom[k[j].data[0]-2].size(1), bottom[k[j].data[0]-2].size(2), bottom[k[j].data[0]-2].size(3)).data, _grid)
+        all_roi.append(_roi_feature.data)
+      crops = Variable(torch.cat(all_roi), volatile=self._mode == 'TEST')
       # crops = F.grid_sample(bottom.expand(rois.size(0), bottom.size(1), bottom.size(2), bottom.size(3)), grid)
 
     return crops
@@ -240,10 +240,10 @@ class Network(nn.Module):
       anchor_target_layer(
       rpn_cls_score.data, self._gt_boxes.data.cpu().numpy(), self._im_info, self._feat_stride, self._anchors.data.cpu().numpy(), self._num_anchors)
 
-    rpn_labels = Variable(torch.from_numpy(rpn_labels).float().cuda()) #.set_shape([1, 1, None, None])
-    rpn_bbox_targets = Variable(torch.from_numpy(rpn_bbox_targets).float().cuda())#.set_shape([1, None, None, self._num_anchors * 4])
-    rpn_bbox_inside_weights = Variable(torch.from_numpy(rpn_bbox_inside_weights).float().cuda())#.set_shape([1, None, None, self._num_anchors * 4])
-    rpn_bbox_outside_weights = Variable(torch.from_numpy(rpn_bbox_outside_weights).float().cuda())#.set_shape([1, None, None, self._num_anchors * 4])
+    rpn_labels = Variable(torch.from_numpy(rpn_labels).float().cuda(), volatile=self._mode == 'TEST') #.set_shape([1, 1, None, None])
+    rpn_bbox_targets = Variable(torch.from_numpy(rpn_bbox_targets).float().cuda(), volatile=self._mode == 'TEST')#.set_shape([1, None, None, self._num_anchors * 4])
+    rpn_bbox_inside_weights = Variable(torch.from_numpy(rpn_bbox_inside_weights).float().cuda(), volatile=self._mode == 'TEST')#.set_shape([1, None, None, self._num_anchors * 4])
+    rpn_bbox_outside_weights = Variable(torch.from_numpy(rpn_bbox_outside_weights).float().cuda(), volatile=self._mode == 'TEST')#.set_shape([1, None, None, self._num_anchors * 4])
 
     rpn_labels = rpn_labels.long()
     self._anchor_targets['rpn_labels'] = rpn_labels
@@ -261,10 +261,10 @@ class Network(nn.Module):
       anchor_target_layer(
       rpn_cls_score.data, self._gt_boxes.data.cpu().numpy(), self._im_info, [self._feat_stride[idx]], self._anchors[idx].data.cpu().numpy(), self._num_anchors)
 
-    rpn_labels = Variable(torch.from_numpy(rpn_labels).float().cuda()) #.set_shape([1, 1, None, None])
-    rpn_bbox_targets = Variable(torch.from_numpy(rpn_bbox_targets).float().cuda())#.set_shape([1, None, None, self._num_anchors * 4])
-    rpn_bbox_inside_weights = Variable(torch.from_numpy(rpn_bbox_inside_weights).float().cuda())#.set_shape([1, None, None, self._num_anchors * 4])
-    rpn_bbox_outside_weights = Variable(torch.from_numpy(rpn_bbox_outside_weights).float().cuda())#.set_shape([1, None, None, self._num_anchors * 4])
+    rpn_labels = Variable(torch.from_numpy(rpn_labels).float().cuda(), volatile=self._mode == 'TEST') #.set_shape([1, 1, None, None])
+    rpn_bbox_targets = Variable(torch.from_numpy(rpn_bbox_targets).float().cuda(), volatile=self._mode == 'TEST')#.set_shape([1, None, None, self._num_anchors * 4])
+    rpn_bbox_inside_weights = Variable(torch.from_numpy(rpn_bbox_inside_weights).float().cuda(), volatile=self._mode == 'TEST')#.set_shape([1, None, None, self._num_anchors * 4])
+    rpn_bbox_outside_weights = Variable(torch.from_numpy(rpn_bbox_outside_weights).float().cuda(), volatile=self._mode == 'TEST')#.set_shape([1, None, None, self._num_anchors * 4])
 
     rpn_labels = rpn_labels.long()
     if 'rpn_labels' not in self._anchor_targets:
@@ -305,7 +305,7 @@ class Network(nn.Module):
     anchors, anchor_length = generate_anchors_pre(\
                                           height, width,
                                            self._feat_stride, self._anchor_scales, self._anchor_ratios)
-    self._anchors = Variable(torch.from_numpy(anchors).cuda())
+    self._anchors = Variable(torch.from_numpy(anchors).cuda(), volatile=self._mode == 'TEST')
     self._anchor_length = anchor_length
 
   def _anchor_component_fpn(self, net_conv):
@@ -320,7 +320,7 @@ class Network(nn.Module):
       anchors, anchor_length = generate_anchors_pre(\
                                             height, width,
                                              [self._feat_stride[idx]], [self._anchor_scales[idx]], self._anchor_ratios)
-      anchors_total.append(Variable(torch.from_numpy(anchors).cuda()))
+      anchors_total.append(Variable(torch.from_numpy(anchors).cuda(), volatile=self._mode == 'TEST'))
       anchor_length_total.append(anchor_length)
 
     self._anchors = anchors_total
@@ -345,7 +345,7 @@ class Network(nn.Module):
     # RPN, class loss
     rpn_cls_score = self._predictions['rpn_cls_score_reshape'].view(-1, 2)
     rpn_label = self._anchor_targets['rpn_labels'].view(-1)
-    rpn_select = Variable((rpn_label.data != -1).nonzero().view(-1))
+    rpn_select = Variable((rpn_label.data != -1).nonzero().view(-1), volatile=self._mode == 'TEST')
     rpn_cls_score = rpn_cls_score.index_select(0, rpn_select).contiguous().view(-1, 2)
     rpn_label = rpn_label.index_select(0, rpn_select).contiguous().view(-1)
     rpn_cross_entropy = F.cross_entropy(rpn_cls_score, rpn_label)
@@ -392,7 +392,7 @@ class Network(nn.Module):
       # RPN, class loss
       rpn_cls_score = self._predictions['rpn_cls_score_reshape'][idx].view(-1, 2)
       rpn_label = self._anchor_targets['rpn_labels'][idx].view(-1)
-      rpn_select = Variable((rpn_label.data != -1).nonzero().view(-1))
+      rpn_select = Variable((rpn_label.data != -1).nonzero().view(-1), volatile=self._mode == 'TEST')
       rpn_cls_score = rpn_cls_score.index_select(0, rpn_select).contiguous().view(-1, 2)
       rpn_label = rpn_label.index_select(0, rpn_select).contiguous().view(-1)
       rpn_cross_entropy += F.cross_entropy(rpn_cls_score, rpn_label) * rpn_label.size(0)
@@ -484,6 +484,8 @@ class Network(nn.Module):
     if self._mode == 'TRAIN':
       rois, roi_scores = self._proposal_layer_fpn(rpn_cls_prob_total, rpn_bbox_pred_total) # rois, roi_scores are varible
       rois, _ = self._proposal_target_layer(rois, roi_scores)
+      for k in self._anchor_targets.keys():
+        self._score_summaries[k] = self._anchor_targets[k]
     else:
       # TODO
       if cfg.TEST.MODE == 'nms':
@@ -494,8 +496,6 @@ class Network(nn.Module):
         raise NotImplementedError
 
     self._predictions["rois"] = rois
-    for k in self._anchor_targets.keys():
-      self._score_summaries[k] = self._anchor_targets[k]
 
     return rois
 
@@ -692,7 +692,7 @@ class Network(nn.Module):
 
     self._image = Variable(torch.from_numpy(image.transpose([0,3,1,2])).cuda(), volatile=mode == 'TEST')
     self._im_info = im_info # No need to change; actually it can be an list
-    self._gt_boxes = Variable(torch.from_numpy(gt_boxes).cuda()) if gt_boxes is not None else None
+    self._gt_boxes = Variable(torch.from_numpy(gt_boxes).cuda(), volatile=mode == 'TEST') if gt_boxes is not None else None
 
     self._mode = mode
 
@@ -702,7 +702,7 @@ class Network(nn.Module):
       # TODO
       stds = bbox_pred.data.new(cfg.TRAIN.BBOX_NORMALIZE_STDS).repeat(self._num_classes).unsqueeze(0).expand_as(bbox_pred)
       means = bbox_pred.data.new(cfg.TRAIN.BBOX_NORMALIZE_MEANS).repeat(self._num_classes).unsqueeze(0).expand_as(bbox_pred)
-      self._predictions["bbox_pred"] = bbox_pred.mul(Variable(stds)).add(Variable(means))
+      self._predictions["bbox_pred"] = bbox_pred.mul(Variable(stds, volatile=mode == 'TEST')).add(Variable(means, volatile=mode == 'TEST'))
     else:
       if cfg.FPN:
         self._add_losses_fpn()
@@ -741,6 +741,7 @@ class Network(nn.Module):
                                                      self._predictions['cls_prob'].data.cpu().numpy(), \
                                                      self._predictions['bbox_pred'].data.cpu().numpy(), \
                                                      self._predictions['rois'].data.cpu().numpy()
+    self.delete_intermediate_states()
     return cls_score, cls_prob, bbox_pred, rois
 
   def delete_intermediate_states(self):
