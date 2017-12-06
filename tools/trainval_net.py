@@ -16,6 +16,7 @@ import argparse
 import pprint
 import numpy as np
 import sys
+import torch
 
 from nets.vgg16 import vgg16
 from nets.resnet_v1 import resnetv1

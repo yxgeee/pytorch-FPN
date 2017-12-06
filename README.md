@@ -1,5 +1,5 @@
-# Still updating
-## Fork from https://github.com/ruotianluo/pytorch-faster-rcnn
+# TODO FPN
+Fork from https://github.com/ruotianluo/pytorch-faster-rcnn
 
 # Important notice:
 If you used the master branch before Sep. 26 2017 and its corresponding pretrained model, **PLEASE PAY ATTENTION**:
