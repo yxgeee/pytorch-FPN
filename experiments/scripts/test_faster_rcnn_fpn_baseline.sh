@@ -32,8 +32,8 @@ case ${DATASET} in
   coco)
     TRAIN_IMDB="coco_2014_train+coco_2014_valminusminival"
     TEST_IMDB="coco_2014_minival"
-    ITERS=1030000
-    ANCHORS="[4,8,16,32]"
+    ITERS=1190000
+    ANCHORS="[2,4,8,16,32]"
     RATIOS="[0.5,1,2]"
     ;;
   *)
@@ -42,15 +42,15 @@ case ${DATASET} in
     ;;
 esac
 
-LOG="experiments/logs/test_${NET}_${TRAIN_IMDB}_${EXTRA_ARGS_SLUG}.txt.`date +'%Y-%m-%d_%H-%M-%S'`"
+LOG="experiments/logs/test_${NET}_${TRAIN_IMDB}_${EXTRA_ARGS_SLUG}_fpn.txt.`date +'%Y-%m-%d_%H-%M-%S'`"
 exec &> >(tee -a "$LOG")
 echo Logging output to "$LOG"
 
 set +x
 if [[ ! -z  ${EXTRA_ARGS_SLUG}  ]]; then
-  NET_FINAL=output/${NET}/${TRAIN_IMDB}/${EXTRA_ARGS_SLUG}/${NET}_faster_rcnn_iter_${ITERS}.pth
+  NET_FINAL=output/${NET}-fpn-baseline/${TRAIN_IMDB}/${EXTRA_ARGS_SLUG}/${NET}_faster_rcnn_fpn_baseline_iter_${ITERS}.pth
 else
-  NET_FINAL=output/${NET}/${TRAIN_IMDB}/default/${NET}_faster_rcnn_iter_${ITERS}.pth
+  NET_FINAL=output/${NET}-fpn-baseline/${TRAIN_IMDB}/default/${NET}_faster_rcnn_fpn_baseline_iter_${ITERS}.pth
 fi
 set -x
 
@@ -58,7 +58,7 @@ if [[ ! -z  ${EXTRA_ARGS_SLUG}  ]]; then
   CUDA_VISIBLE_DEVICES=${GPU_ID} time python ./tools/test_net.py \
     --imdb ${TEST_IMDB} \
     --model ${NET_FINAL} \
-    --cfg experiments/cfgs/${NET}.yml \
+    --cfg experiments/cfgs/${NET}-fpn-baseline.yml \
     --tag ${EXTRA_ARGS_SLUG} \
     --net ${NET} \
     --set ANCHOR_SCALES ${ANCHORS} ANCHOR_RATIOS ${RATIOS} \
@@ -67,7 +67,7 @@ else
   CUDA_VISIBLE_DEVICES=${GPU_ID} time python ./tools/test_net.py \
     --imdb ${TEST_IMDB} \
     --model ${NET_FINAL} \
-    --cfg experiments/cfgs/${NET}.yml \
+    --cfg experiments/cfgs/${NET}-fpn-baseline.yml \
     --net ${NET} \
     --set ANCHOR_SCALES ${ANCHORS} ANCHOR_RATIOS ${RATIOS} \
           ${EXTRA_ARGS}

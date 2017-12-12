@@ -133,6 +133,9 @@ if __name__ == '__main__':
     net = mobilenetv1()
   else:
     raise NotImplementedError
+
+  if cfg.MULTI_GPU:
+    net = torch.nn.DataParallel(net, device_ids=cfg.DEVICE_IDS)
     
   train_net(net, imdb, roidb, valroidb, output_dir, tb_dir,
             pretrained_model=args.weight,

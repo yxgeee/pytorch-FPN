@@ -31,20 +31,33 @@ def get_minibatch(roidb, num_classes):
 
   blobs = {'data': im_blob}
 
-  assert len(im_scales) == 1, "Single batch only"
-  assert len(roidb) == 1, "Single batch only"
-  
-  # gt boxes: (x1, y1, x2, y2, cls)
-  if cfg.TRAIN.USE_ALL_GT:
-    # Include all ground truth boxes
-    gt_inds = np.where(roidb[0]['gt_classes'] != 0)[0]
+  # assert len(im_scales) == 1, "Single batch only"
+  # assert len(roidb) == 1, "Single batch only"
+
+  gt_boxes_total = []
+  max_gt_boxes = 0
+
+  for idx in range(num_images):
+    # gt boxes: (x1, y1, x2, y2, cls)
+    if cfg.TRAIN.USE_ALL_GT:
+      # Include all ground truth boxes
+      gt_inds = np.where(roidb[idx]['gt_classes'] != 0)[0]
+    else:
+      # For the COCO ground truth boxes, exclude the ones that are ''iscrowd'' 
+      gt_inds = np.where(roidb[idx]['gt_classes'] != 0 & np.all(roidb[idx]['gt_overlaps'].toarray() > -1.0, axis=1))[0]
+    gt_boxes = np.empty((len(gt_inds), 5), dtype=np.float32)
+    gt_boxes[:, 0:4] = roidb[idx]['boxes'][gt_inds, :] * im_scales[0]
+    gt_boxes[:, 4] = roidb[idx]['gt_classes'][gt_inds]
+    if gt_boxes.shape[0]>max_gt_boxes:
+      max_gt_boxes = gt_boxes.shape[0]
+    gt_boxes_total.append(gt_boxes)
+  if cfg.MULTI_GPU:
+    for i in range(len(gt_boxes_total)):
+      if gt_boxes_total[i].shape[0]<max_gt_boxes:
+        gt_boxes_total[i] = np.concatenate((gt_boxes_total[i],np.zeros((max_gt_boxes - gt_boxes_total[i].shape[0],5))),axis=0)
+    blobs['gt_boxes'] = np.stack(gt_boxes_total)
   else:
-    # For the COCO ground truth boxes, exclude the ones that are ''iscrowd'' 
-    gt_inds = np.where(roidb[0]['gt_classes'] != 0 & np.all(roidb[0]['gt_overlaps'].toarray() > -1.0, axis=1))[0]
-  gt_boxes = np.empty((len(gt_inds), 5), dtype=np.float32)
-  gt_boxes[:, 0:4] = roidb[0]['boxes'][gt_inds, :] * im_scales[0]
-  gt_boxes[:, 4] = roidb[0]['gt_classes'][gt_inds]
-  blobs['gt_boxes'] = gt_boxes
+    blobs['gt_boxes'] = gt_boxes_total[0]
   blobs['im_info'] = np.array(
     [im_blob.shape[1], im_blob.shape[2], im_scales[0]],
     dtype=np.float32)

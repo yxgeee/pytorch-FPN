@@ -287,6 +287,10 @@ __C.RPN_CHANNELS = 512
 # usage of feature pyramid networks(FPN)
 __C.FPN = False
 
+__C.MULTI_GPU = False
+
+__C.DEVICE_IDS = [0,4]
+
 
 def get_output_dir(imdb, weights_filename):
   """Return the directory where experimental artifacts are placed.

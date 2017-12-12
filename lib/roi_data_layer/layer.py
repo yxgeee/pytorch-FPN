@@ -63,12 +63,14 @@ class RoIDataLayer(object):
 
   def _get_next_minibatch_inds(self):
     """Return the roidb indices for the next minibatch."""
+
+    ims_per_batch = cfg.TRAIN.IMS_PER_BATCH * max(1, int(cfg.MULTI_GPU == True) * len(cfg.DEVICE_IDS))
     
-    if self._cur + cfg.TRAIN.IMS_PER_BATCH >= len(self._roidb):
+    if self._cur + ims_per_batch >= len(self._roidb):
       self._shuffle_roidb_inds()
 
-    db_inds = self._perm[self._cur:self._cur + cfg.TRAIN.IMS_PER_BATCH]
-    self._cur += cfg.TRAIN.IMS_PER_BATCH
+    db_inds = self._perm[self._cur:self._cur + ims_per_batch]
+    self._cur += ims_per_batch
 
     return db_inds
 

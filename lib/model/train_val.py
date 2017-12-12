@@ -90,7 +90,13 @@ class SolverWrapper(object):
 
   def from_snapshot(self, sfile, nfile):
     print('Restoring model snapshots from {:s}'.format(sfile))
-    self.net.load_state_dict(torch.load(str(sfile)))
+    state_dict = torch.load(str(sfile))
+    if cfg.MULTI_GPU:
+      for key in state_dict.keys():
+        if not key.startswith('module'):
+          state_dict['module.'+key] = state_dict.pop(key)
+    # self.net.load_state_dict(torch.load(str(sfile)))
+    self.net.load_state_dict(state_dict)
     print('Restored.')
     # Needs to restore the other hyper-parameters/states for training, (TODO xinlei) I have
     # tried my best to find the random states so that it can be recovered exactly
@@ -115,9 +121,14 @@ class SolverWrapper(object):
     # Set the random seed
     torch.manual_seed(cfg.RNG_SEED)
     # Build the main computation graph
-    self.net.create_architecture(self.imdb.num_classes, tag='default',
-                                            anchor_scales=cfg.ANCHOR_SCALES,
-                                            anchor_ratios=cfg.ANCHOR_RATIOS)
+    if cfg.MULTI_GPU:
+      self.net.module.create_architecture(self.imdb.num_classes, tag='default',
+                                              anchor_scales=cfg.ANCHOR_SCALES,
+                                              anchor_ratios=cfg.ANCHOR_RATIOS)
+    else:
+      self.net.create_architecture(self.imdb.num_classes, tag='default',
+                                        anchor_scales=cfg.ANCHOR_SCALES,
+                                        anchor_ratios=cfg.ANCHOR_RATIOS)
     # Define the loss
     # loss = layers['total_loss']
     # Set learning rate and momentum
@@ -164,7 +175,10 @@ class SolverWrapper(object):
     ss_paths = []
     # Fresh train directly from ImageNet weights
     print('Loading initial model weights from {:s}'.format(self.pretrained_model))
-    self.net.load_pretrained_cnn(torch.load(self.pretrained_model))
+    if cfg.MULTI_GPU:
+      self.net.module.load_pretrained_cnn(torch.load(self.pretrained_model))
+    else:
+      self.net.load_pretrained_cnn(torch.load(self.pretrained_model))
     print('Loaded.')
     # Need to fix the variables before loading, so that the RGB weights are changed to BGR
     # For VGG16 it also changes the convolutional weights fc6 and fc7 to
@@ -247,6 +261,9 @@ class SolverWrapper(object):
       utils.timer.timer.tic()
       # Get training data, one batch at a time
       blobs = self.data_layer.forward()
+
+      import pdb
+      pdb.set_trace()
 
       now = time.time()
       if iter == 1 or now - last_summary_time > cfg.TRAIN.SUMMARY_INTERVAL:
